@@ -182,6 +182,12 @@ import org.codehaus.plexus.component.annotations.Requirement;
  * </table>
  *
  * @author Joerg Hohwiller (hohwille at users.sourceforge.net)
+ *
+ * Modified by Livan Du
+ *
+ * This project is based on https://github.com/mojohaus/flatten-maven-plugin 1.2.0-SNAPSHOT
+ * with intension of temporary fix of https://github.com/mojohaus/flatten-maven-plugin/issues/57 before 1.2.0 is released
+ *
  */
 @SuppressWarnings( "deprecation" )
 // CHECKSTYLE_OFF: LineLength
@@ -483,7 +489,7 @@ public class FlattenMojo
         Model cleanPom = createCleanPom( effectivePom );
 
         FlattenDescriptor descriptor = getFlattenDescriptor();
-        Model originalPom = this.project.getOriginalModel();
+        Model originalPom = recreateOriginalPom( buildingRequest, isEmbedBuildProfileDependencies(), this.flattenMode );
         Model resolvedPom = this.project.getModel();
         Model interpolatedPom = createResolvedPom( buildingRequest );
 
@@ -719,19 +725,10 @@ public class FlattenMojo
         return buildingRequest;
     }
 
-    /**
-     * Creates the effective POM for the given <code>pomFile</code> trying its best to match the core maven behaviour.
-     *
-     * @param buildingRequest {@link ModelBuildingRequest}
-     * @param embedBuildProfileDependencies embed build profiles yes/no.
-     * @return the parsed and calculated effective POM.
-     * @throws MojoExecutionException if anything goes wrong.
-     */
-    protected Model createEffectivePom( ModelBuildingRequest buildingRequest,
-                                               final boolean embedBuildProfileDependencies, final FlattenMode flattenMode )
-        throws MojoExecutionException
+    protected ModelBuildingResult rebuildModel(ModelBuildingRequest buildingRequest,
+                                               final boolean embedBuildProfileDependencies, final FlattenMode flattenMode)
+            throws MojoExecutionException
     {
-        ModelBuildingResult buildingResult;
         try
         {
             ProfileInjector profileInjector = new ProfileInjector()
@@ -769,18 +766,33 @@ public class FlattenMojo
                     return activeProfiles;
                 }
             };
-            
+
             defaultModelBuilder.setProfileInjector( profileInjector ).setProfileSelector( profileSelector );
             //if (flattenMode == FlattenMode.resolveCiFriendliesOnly) {
             //	defaultModelBuilder.setModelInterpolator(new CiModelInterpolator());
             //}
-            buildingResult = defaultModelBuilder.build( buildingRequest );
+            return defaultModelBuilder.build( buildingRequest );
         }
         catch ( ModelBuildingException e )
         {
             throw new MojoExecutionException( e.getMessage(), e );
         }
+    }
 
+    /**
+     * Creates the effective POM for the given <code>pomFile</code> trying its best to match the core maven behaviour.
+     *
+     * @param buildingRequest {@link ModelBuildingRequest}
+     * @param embedBuildProfileDependencies embed build profiles yes/no.
+     * @return the parsed and calculated effective POM.
+     * @throws MojoExecutionException if anything goes wrong.
+     */
+    protected Model createEffectivePom( ModelBuildingRequest buildingRequest,
+                                               final boolean embedBuildProfileDependencies, final FlattenMode flattenMode )
+        throws MojoExecutionException
+    {
+
+        ModelBuildingResult buildingResult = rebuildModel(buildingRequest, embedBuildProfileDependencies, flattenMode);
         Model effectivePom = buildingResult.getEffectiveModel();
 
         // LoggingModelProblemCollector problems = new LoggingModelProblemCollector( getLog() );
@@ -791,6 +803,21 @@ public class FlattenMojo
         // remove Repositories from super POM (central)
         effectivePom.setRepositories( createFlattenedRepositories( effectivePom.getRepositories() ) );
         return effectivePom;
+    }
+
+    /**
+     * Re-creates the Model for the given <code>pomFile</code> with customized profile injector and selector
+     *
+     * @param buildingRequest {@link ModelBuildingRequest}
+     * @return the parsed and calculated effective POM.
+     * @throws MojoExecutionException if anything goes wrong.
+     */
+    protected Model recreateOriginalPom( ModelBuildingRequest buildingRequest,
+                                           final boolean embedBuildProfileDependencies, final FlattenMode flattenMode )
+            throws MojoExecutionException
+    {
+        ModelBuildingResult buildingResult = rebuildModel(buildingRequest, embedBuildProfileDependencies, flattenMode);
+        return buildingResult.getRawModel();
     }
 
     /**
